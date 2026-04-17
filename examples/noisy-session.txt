@@ -1,0 +1,76 @@
+# This file simulates a noisy terminal session – lots of chatter, false starts,
+# and irrelevant output mixed with real findings.
+
+hey can you try that box again?
+sure, give me a sec
+
+$ sudo nmap -p- --min-rate 5000 10.10.11.100
+Starting Nmap 7.94
+...ok going to take a while
+actually let me use a faster flag
+
+$ sudo nmap -sV -sC -T4 10.10.11.100
+Starting Nmap 7.94 ( https://nmap.org )
+Nmap scan report for 10.10.11.100
+Host is up.
+PORT   STATE SERVICE VERSION
+21/tcp open  ftp     vsftpd 3.0.3
+| ftp-anon: Anonymous FTP login allowed (FTP code 230)
+22/tcp open  ssh     OpenSSH 7.2p2 Ubuntu 4ubuntu2.10
+80/tcp open  http    nginx 1.10.3
+
+hmm anonymous FTP is open that's interesting
+yeah definitely worth checking
+
+$ ftp 10.10.11.100
+Connected to 10.10.11.100.
+220 (vsFTPd 3.0.3)
+Name (10.10.11.100:kali): anonymous
+Password:
+230 Login successful.
+ftp> ls
+drwxr-xr-x    2 0        0            4096 Jan 12 2024 pub
+ftp> cd pub
+ftp> ls
+-rw-r--r--    1 0        0             109 Jan 12 2024 notice.txt
+ftp> get notice.txt
+
+ooh a notice file
+
+$ cat notice.txt
+Dear hackers,
+Welcome to my totally secure server!
+Hint: the admin password is in /var/www/html/config.php
+
+LMAO they left a hint
+that's wild
+
+# NOTE: check /var/www/html/config.php for credentials
+# TODO: try directory traversal on port 80 if direct access is blocked
+# INVESTIGATE: is there an LFI on the web app that would reach config.php?
+
+$ curl -s http://10.10.11.100/
+<!DOCTYPE html>
+<html>
+<title>Welcome</title>
+<body><h1>Corporate Portal</h1></body>
+</html>
+
+$ gobuster dir -u http://10.10.11.100/ -w /usr/share/wordlists/dirb/common.txt
+===============================================================
+Gobuster v3.5
+===============================================================
+/index.html           (Status: 200) [Size: 112]
+/admin                (Status: 301) [Size: 162]
+/uploads              (Status: 403) [Size: 162]
+/config.php           (Status: 200) [Size: 0]
+===============================================================
+
+wait config.php is accessible directly?!
+yes – curl it
+
+$ curl -s http://10.10.11.100/config.php
+(empty response – probably output buffering)
+
+# Worth trying: add ?debug=1 or check PHP source exposure
+# TODO: Run nikto against port 80 next

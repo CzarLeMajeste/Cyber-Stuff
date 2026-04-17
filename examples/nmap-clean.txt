@@ -1,0 +1,20 @@
+# Nmap scan – 2026-04-17
+# Target: 10.10.10.55
+
+nmap -sV -sC -oN scan.txt 10.10.10.55
+
+Starting Nmap 7.94 ( https://nmap.org ) at 2026-04-17 09:00 UTC
+Nmap scan report for 10.10.10.55
+Host is up (0.048s latency).
+Not shown: 997 closed tcp ports (reset)
+PORT     STATE SERVICE VERSION
+22/tcp   open  ssh     OpenSSH 8.9p1 Ubuntu 3ubuntu0.1
+80/tcp   open  http    Apache httpd 2.4.52 ((Ubuntu))
+3306/tcp open  mysql   MySQL 8.0.31
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 12.33 seconds
+
+# Interesting: MySQL exposed on 3306 – no auth bypass confirmed yet, check creds
+# TODO: run gobuster against port 80
+# NOTE: SSH banner says Ubuntu – likely box is 22.04 LTS

