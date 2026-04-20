@@ -103,3 +103,70 @@ python dump2note.py examples/nmap-clean.txt --preview
 python dump2note.py examples/noisy-session.txt --preview
 python dump2note.py examples/multi-tool.txt --preview
 ```
+
+## Publishing notes to GitHub
+
+Use `publish-lab-notes.sh` to convert a lab dump **and** commit/push the
+result to GitHub in a single command.
+
+### Requirements
+
+- Python 3.10+ (for `dump2note.py`)
+- Git with push access configured (SSH key, HTTPS credential helper, or a
+  [personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens))
+
+### Quick start
+
+```bash
+# Make executable (one-time setup)
+chmod +x publish-lab-notes.sh
+
+# Full pipeline – convert session.log, commit, and push
+./publish-lab-notes.sh session.log --platform htb --lab "Lame"
+
+# Fully non-interactive (great for shell aliases)
+./publish-lab-notes.sh nmap.log --platform thm --lab "Nmap Room" \
+    --tool nmap --date 2026-04-20 --yes
+
+# Commit-only mode (when you already ran dump2note.py manually)
+./publish-lab-notes.sh --platform htb --lab "Lame"
+
+# Local commit only – push later
+./publish-lab-notes.sh session.log --no-push
+```
+
+### What it does
+
+| Step | Description |
+|------|-------------|
+| **Pull** | `git pull --rebase` to sync with the remote before making changes |
+| **Convert** | Runs `dump2note.py` on your dump file (skipped in commit-only mode) |
+| **Stage** | `git add notes/` to stage all new and modified notes |
+| **Confirm** | Shows staged files and commit message; prompts before proceeding |
+| **Commit** | Creates a commit like `Add HTB lab notes: Lame [2026-04-20]` |
+| **Push** | `git push` to publish to GitHub (skip with `--no-push`) |
+
+### Options
+
+```
+Usage: publish-lab-notes.sh [DUMP_FILE] [OPTIONS]
+
+  DUMP_FILE             Path to raw dump file. Omit to commit existing note changes.
+
+Script options:
+  --platform PLATFORM   Platform label (e.g. thm, htb, pwn.college)
+  --lab LAB             Lab / room / challenge name (used in commit message)
+  --no-push             Commit locally without pushing to remote
+  -y, --yes             Skip confirmation prompt before committing
+  -h, --help            Show this message and exit
+
+Options forwarded to dump2note.py:
+  --tool TOOL           Force tool name (skips auto-detection prompt)
+  --date DATE           Force date as YYYY-MM-DD (default: today)
+  --append              Append to an existing note instead of overwriting
+  --no-redact           Disable automatic redaction of sensitive values
+  --output-dir DIR      Notes root directory (default: notes/)
+```
+
+> **Windows users:** Run the script inside [Git Bash](https://git-scm.com/downloads)
+> or [WSL](https://learn.microsoft.com/en-us/windows/wsl/install).
