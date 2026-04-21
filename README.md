@@ -52,6 +52,9 @@ python dump2note.py session.log --tool nmap --date 2026-04-17
 # Pipe output directly from another command
 nmap -sV -sC 10.10.10.5 | python dump2note.py --tool nmap
 
+# Auto-ingest recent terminal session history
+python dump2note.py --history --history-lines 300
+
 # Append to an existing note instead of overwriting
 python dump2note.py more-findings.log --tool nmap --date 2026-04-17 --append
 
@@ -68,6 +71,7 @@ python dump2note.py session.log --no-redact
 | **Normalize** | Deduplicates repeated lines and collapses blank-line runs |
 | **Classify** | Sorts lines into *Commands / Steps*, *Findings*, *Follow-ups*, and *Raw Notes* |
 | **Redact** | Removes passwords, API tokens, JWTs, and AWS keys from the output (disable with `--no-redact`) |
+| **Format** | Produces Obsidian-friendly Markdown with YAML frontmatter and task-style follow-ups |
 | **Write** | Creates `notes/<tool>/<YYYY>/<YYYY-MM-DD>.md` (merges or appends if the file already exists) |
 
 ### Options
@@ -84,6 +88,8 @@ options:
   --preview             Print the generated note without writing to disk
   --append              Append to an existing note instead of overwriting
   --no-redact           Disable automatic redaction of sensitive values
+  --history             Auto-read the current shell history and convert it
+  --history-lines N     Number of recent history lines to ingest (default: 500)
   --output-dir DIR      Root directory for notes (default: notes/)
   -h, --help            Show this help message
 ```
@@ -131,6 +137,9 @@ chmod +x publish-lab-notes.sh
 # Commit-only mode (when you already ran dump2note.py manually)
 ./publish-lab-notes.sh --platform htb --lab "Lame"
 
+# Auto-convert from terminal history, then commit and push
+./publish-lab-notes.sh --history --platform htb --lab "Lame"
+
 # Local commit only – push later
 ./publish-lab-notes.sh session.log --no-push
 ```
@@ -165,6 +174,8 @@ Options forwarded to dump2note.py:
   --date DATE           Force date as YYYY-MM-DD (default: today)
   --append              Append to an existing note instead of overwriting
   --no-redact           Disable automatic redaction of sensitive values
+  --history             Auto-read terminal history and convert it
+  --history-lines N     Number of recent history lines to ingest (default: 500)
   --output-dir DIR      Notes root directory (default: notes/)
 ```
 

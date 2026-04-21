@@ -261,8 +261,14 @@ def _fmt_list(items: list[str], fallback: str = 'None captured.') -> str:
     return '\n'.join(f'- {item}' for item in items)
 
 
+def _fmt_tasks(items: list[str], fallback: str = 'None captured.') -> str:
+    if not items:
+        return f'- [ ] {fallback}'
+    return '\n'.join(f'- [ ] {item}' for item in items)
+
+
 def build_note(tool: str, date_str: str, buckets: dict[str, list[str]]) -> str:
-    """Render a complete Markdown note from classified buckets."""
+    """Render a complete Obsidian-friendly Markdown note from classified buckets."""
     summary = build_summary(buckets)
 
     raw_section = ''
@@ -270,6 +276,13 @@ def build_note(tool: str, date_str: str, buckets: dict[str, list[str]]) -> str:
         raw_section = '\n\n## Raw Notes\n\n' + _fmt_list(buckets['raw'])
 
     return (
+        f'---\n'
+        f'tool: {tool}\n'
+        f'date: {date_str}\n'
+        f'tags:\n'
+        f'  - cyber\n'
+        f'  - tool/{tool}\n'
+        f'---\n\n'
         f'# {tool} Notes\n\n'
         f'- Tool: {tool}\n'
         f'- Date: {date_str}\n\n'
@@ -280,7 +293,7 @@ def build_note(tool: str, date_str: str, buckets: dict[str, list[str]]) -> str:
         f'## Findings\n\n'
         f'{_fmt_list(buckets["findings"])}\n\n'
         f'## Follow-ups\n\n'
-        f'{_fmt_list(buckets["followups"])}'
+        f'{_fmt_tasks(buckets["followups"])}'
         f'{raw_section}\n'
     )
 
