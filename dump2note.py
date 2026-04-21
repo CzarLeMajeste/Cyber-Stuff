@@ -16,6 +16,8 @@ Options
     --preview           Print the generated note; do NOT write to disk
     --append            Append to an existing note instead of overwriting
     --no-redact         Disable automatic redaction of sensitive values
+    --history           Auto-read the current shell history and convert it
+    --history-lines N   Number of recent history lines to ingest (default: 500)
     --output-dir DIR    Root directory for notes (default: notes/)
     --help, -h          Show this help message
 
@@ -32,11 +34,15 @@ Examples
 
     # Pipe from clipboard / another command
     cat session.log | python dump2note.py --tool sqlmap
+
+    # Auto-ingest your terminal session history
+    python dump2note.py --history --history-lines 300
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 from datetime import date as _date
@@ -164,6 +170,30 @@ def redact(text: str) -> str:
     for pattern, replacement in REDACT_PATTERNS:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
     return text
+
+
+def read_terminal_history(max_lines: int) -> str:
+    """Read the latest commands from the user's shell history file."""
+    candidates: list[Path] = []
+    histfile = os.environ.get('HISTFILE')
+    if histfile:
+        candidates.append(Path(histfile).expanduser())
+    candidates.extend([
+        Path('~/.bash_history').expanduser(),
+        Path('~/.zsh_history').expanduser(),
+    ])
+
+    history_path = next((p for p in candidates if p.is_file()), None)
+    if not history_path:
+        raise FileNotFoundError(
+            'Could not find a shell history file. Set HISTFILE or use DUMP_FILE/stdin instead.'
+        )
+
+    lines = history_path.read_text(errors='replace').splitlines()
+    recent = lines[-max_lines:] if max_lines > 0 else lines
+    # zsh history can include timestamp prefixes like ": 1713670709:0;command"
+    cleaned = [re.sub(r'^:\s+\d+:\d+;', '', line) for line in recent]
+    return '\n'.join(cleaned)
 
 
 def normalize_lines(lines: list[str]) -> list[str]:
@@ -302,6 +332,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
             '  python dump2note.py session.log --preview        # preview only\n'
             '  python dump2note.py nmap.txt --tool nmap --date 2026-04-17\n'
             '  cat log.txt | python dump2note.py --tool sqlmap  # pipe input\n'
+            '  python dump2note.py --history --history-lines 300 # auto history mode\n'
         ),
     )
     p.add_argument('dump_file', nargs='?', help='Path to raw dump file (default: stdin)')
@@ -313,6 +344,10 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    help='Append to an existing note instead of overwriting')
     p.add_argument('--no-redact', dest='no_redact', action='store_true',
                    help='Disable automatic redaction of sensitive values')
+    p.add_argument('--history', action='store_true',
+                   help='Auto-read the current shell history and convert it')
+    p.add_argument('--history-lines', type=int, default=500,
+                   help='How many recent history lines to ingest with --history (default: 500)')
     p.add_argument('--output-dir', dest='output_dir', default='notes',
                    help='Root directory for notes (default: notes/)')
     return p.parse_args(argv)
@@ -323,9 +358,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
+    if args.history_lines <= 0:
+        print('ERROR: --history-lines must be greater than 0.', file=sys.stderr)
+        return 1
+    if args.dump_file and args.history:
+        print('ERROR: Use either DUMP_FILE or --history, not both.', file=sys.stderr)
+        return 1
 
     # 1. Read raw input -------------------------------------------------------
-    if args.dump_file:
+    if args.history:
+        try:
+            raw_text = read_terminal_history(args.history_lines)
+        except FileNotFoundError as exc:
+            print(f'ERROR: {exc}', file=sys.stderr)
+            return 1
+    elif args.dump_file:
         dump_path = Path(args.dump_file)
         if not dump_path.exists():
             print(f'ERROR: File not found: {dump_path}', file=sys.stderr)
@@ -346,7 +393,7 @@ def main(argv: list[str] | None = None) -> int:
     detected_tool = args.tool or detect_tool(raw_text)
     detected_date = args.date or detect_date(raw_text)
 
-    interactive = sys.stdin.isatty() or bool(args.dump_file)
+    interactive = (sys.stdin.isatty() and not args.history) or bool(args.dump_file)
     if interactive:
         tool = args.tool or prompt_tool(detected_tool)
         date_str = args.date or prompt_date(detected_date)

@@ -16,6 +16,7 @@ PLATFORM=""
 LAB=""
 D2N_ARGS=()
 OUTPUT_DIR="notes"
+RUN_DUMP2NOTE=0
 NO_PUSH=0
 YES=0
 
@@ -42,6 +43,8 @@ Options forwarded to dump2note.py:
   --date DATE           Force date as YYYY-MM-DD (default: today)
   --append              Append to an existing note instead of overwriting
   --no-redact           Disable automatic redaction of sensitive values
+  --history             Auto-read terminal history and convert it
+  --history-lines N     Number of recent history lines to ingest (default: 500)
   --output-dir DIR      Notes root directory (default: notes/)
 
 Examples:
@@ -54,6 +57,9 @@ Examples:
 
   # Commit-only mode (after running dump2note.py manually)
   ./publish-lab-notes.sh --platform htb --lab "Lame"
+
+  # Auto-convert from terminal history, then commit and push
+  ./publish-lab-notes.sh --history --platform htb --lab "Lame"
 
   # Local commit only – push later
   ./publish-lab-notes.sh session.log --no-push
@@ -71,11 +77,15 @@ while [[ $# -gt 0 ]]; do
     # Value options forwarded to dump2note.py
     --tool|--date)
       D2N_ARGS+=("$1" "$2"); shift 2 ;;
+    --history-lines)
+      RUN_DUMP2NOTE=1
+      D2N_ARGS+=("$1" "$2"); shift 2 ;;
     --output-dir)
       OUTPUT_DIR="$2"
       D2N_ARGS+=("$1" "$2"); shift 2 ;;
     # Flag options forwarded to dump2note.py
-    --append|--no-redact)
+    --append|--no-redact|--history)
+      [[ "$1" == "--history" ]] && RUN_DUMP2NOTE=1
       D2N_ARGS+=("$1"); shift ;;
     -*)
       echo "ERROR: Unknown option: $1" >&2
@@ -116,6 +126,10 @@ if [[ -n "$DUMP_FILE" ]]; then
   else
     python3 dump2note.py "$DUMP_FILE"
   fi
+  echo ""
+elif [[ $RUN_DUMP2NOTE -eq 1 ]]; then
+  echo "==> Converting terminal history to note..."
+  python3 dump2note.py "${D2N_ARGS[@]}"
   echo ""
 fi
 
