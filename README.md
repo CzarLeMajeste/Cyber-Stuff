@@ -1,6 +1,6 @@
-# Cyber-Stuff
+# Session Logger
 
-This repo contains all my Cybersecurity notes.
+This repo contains  my session logger.
 
 ## Notes structure
 
