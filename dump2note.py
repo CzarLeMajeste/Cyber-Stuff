@@ -261,7 +261,7 @@ def _fmt_list(items: list[str], fallback: str = 'None captured.') -> str:
     return '\n'.join(f'- {item}' for item in items)
 
 
-def _fmt_tasks(items: list[str], fallback: str = 'None captured.') -> str:
+def _fmt_task_list(items: list[str], fallback: str = 'None captured.') -> str:
     if not items:
         return f'- [ ] {fallback}'
     return '\n'.join(f'- [ ] {item}' for item in items)
@@ -293,7 +293,7 @@ def build_note(tool: str, date_str: str, buckets: dict[str, list[str]]) -> str:
         f'## Findings\n\n'
         f'{_fmt_list(buckets["findings"])}\n\n'
         f'## Follow-ups\n\n'
-        f'{_fmt_tasks(buckets["followups"])}'
+        f'{_fmt_task_list(buckets["followups"])}'
         f'{raw_section}\n'
     )
 
@@ -371,11 +371,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
-    if args.history_lines <= 0:
-        print('ERROR: --history-lines must be greater than 0.', file=sys.stderr)
-        return 1
     if args.dump_file and args.history:
         print('ERROR: Use either DUMP_FILE or --history, not both.', file=sys.stderr)
+        return 1
+    if args.history and args.history_lines <= 0:
+        print('ERROR: --history-lines must be greater than 0.', file=sys.stderr)
         return 1
 
     # 1. Read raw input -------------------------------------------------------
