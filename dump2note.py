@@ -178,15 +178,21 @@ def read_terminal_history(max_lines: int) -> str:
     histfile = os.environ.get('HISTFILE')
     if histfile:
         candidates.append(Path(histfile).expanduser())
+    xdg_state_home = os.environ.get('XDG_STATE_HOME')
+    if xdg_state_home:
+        candidates.append(Path(xdg_state_home).expanduser() / 'bash' / 'history')
     candidates.extend([
-        Path('~/.bash_history').expanduser(),
-        Path('~/.zsh_history').expanduser(),
+        Path('~/.local/state/bash/history').expanduser(),     # XDG-style bash history
+        Path('~/.bash_history').expanduser(),                 # bash default
+        Path('~/.zsh_history').expanduser(),                  # zsh default
+        Path('~/.local/share/fish/fish_history').expanduser(),  # fish standard
+        Path('~/.config/fish/fish_history').expanduser(),       # fish legacy
     ])
 
     history_path = next((p for p in candidates if p.is_file()), None)
     if not history_path:
         raise FileNotFoundError(
-            'Could not find a shell history file. Set HISTFILE or use DUMP_FILE/stdin instead.'
+            'Could not find a shell history file. Set/export HISTFILE or use DUMP_FILE/stdin instead.'
         )
 
     lines = history_path.read_text(errors='replace').splitlines()
