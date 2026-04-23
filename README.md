@@ -112,51 +112,54 @@ python dump2note.py examples/multi-tool.txt --preview
 
 ## Background session recorder
 
-Use `session_recorder.py` to capture your **entire desktop session** in the
-background – active window titles, clipboard changes, browser URLs, and
-terminal commands – and later convert the recording into a structured note.
+Use the Rust CLI in `session-recorder/` to capture desktop session context
+and export it into structured notes.
+
+### Build / run
+
+```bash
+# Run without installing (from repo root)
+cargo run --manifest-path session-recorder/Cargo.toml -- --help
+
+# Build a release binary
+cargo build --manifest-path session-recorder/Cargo.toml --release
+./session-recorder/target/release/session-recorder --help
+```
 
 ### Requirements
 
-- Python 3.10+ (standard library only for core features)
-- **Linux**: `xdotool` for window titles; `xclip` or `xsel` for clipboard
-- **macOS**: `osascript` (built-in); `pbpaste` (built-in)
-- **Windows**: `ctypes` (built-in)
-
-Optional packages for enhanced UX:
-
-| Package | Feature | Install |
-|---------|---------|---------|
-| `pystray` + `Pillow` | System tray icon with pause/stop controls | `pip install pystray Pillow` |
-| `pynput` | Global hotkey kill switch | `pip install pynput` |
+- Rust toolchain (Cargo + rustc)
+- **Linux**: `xdotool` + `xprop` for active window metadata; `xclip` or `xsel` for clipboard
+- **macOS**: `osascript` + `pbpaste` (built in)
+- **Windows**: PowerShell available in `PATH`
 
 ### Quick start
 
 ```bash
 # Start recording in the foreground (Ctrl-C to stop)
-python session_recorder.py start
+cargo run --manifest-path session-recorder/Cargo.toml -- start
 
 # Start in the background (Unix only)
-python session_recorder.py start --daemon
+cargo run --manifest-path session-recorder/Cargo.toml -- start --daemon
 
 # Check status
-python session_recorder.py status
+cargo run --manifest-path session-recorder/Cargo.toml -- status
 
 # Pause / resume without stopping
-python session_recorder.py pause
-python session_recorder.py resume
+cargo run --manifest-path session-recorder/Cargo.toml -- pause
+cargo run --manifest-path session-recorder/Cargo.toml -- resume
 
 # Stop the daemon
-python session_recorder.py stop
+cargo run --manifest-path session-recorder/Cargo.toml -- stop
 
 # Export today's session to notes/
-python session_recorder.py export
+cargo run --manifest-path session-recorder/Cargo.toml -- export
 
 # Preview the note without writing it
-python session_recorder.py export --preview
+cargo run --manifest-path session-recorder/Cargo.toml -- export --preview
 
-# Export a specific date
-python session_recorder.py export --date 2026-04-20
+# Export a specific date and include URLs
+cargo run --manifest-path session-recorder/Cargo.toml -- export --date 2026-04-20 --include-urls
 ```
 
 ### What it records
@@ -164,51 +167,59 @@ python session_recorder.py export --date 2026-04-20
 | Sensor | Data captured | Platform |
 |--------|--------------|----------|
 | **Window tracker** | Active window title and app name (polls every 5 s by default) | Linux (X11), macOS, Windows |
-| **Clipboard tracker** | Text copied to the clipboard (polls every 2 s) | Linux, macOS, Windows |
-| **Browser history** | Recent URLs from Chrome, Chromium, Edge, Brave, Firefox (imported on export) | All |
+| **Clipboard tracker** | Clipboard text changes (polls every 2 s by default) | Linux, macOS, Windows |
+| **Browser history import** | Recent URLs from Chrome, Chromium, Edge, Brave, Firefox (imported during export) | All |
 
 ### Privacy controls
 
-All captured data is stored **locally only** in
-`~/.local/share/session-logger/sessions/<YYYY>/<YYYY-MM-DD>.jsonl`.
+Captured data is stored **locally only** by default under:
+`~/.local/share/session-logger/sessions/<YYYY>/<YYYY-MM-DD>.jsonl` (Linux; platform-equivalent app-data dirs are used elsewhere).
 
 | Control | How it works |
 |---------|-------------|
-| **Exclude apps** | Apps listed in `exclude_apps` (e.g. password managers) are never captured |
-| **Exclude window patterns** | Titles matching `exclude_window_patterns` (e.g. containing "password") are skipped |
-| **Redaction** | Passwords, tokens, JWTs, and AWS keys are redacted before storage (disable with `--no-redact`) |
-| **Clipboard length cap** | Clipboard content is truncated at 2 000 characters |
-| **Pause / resume** | Recording can be paused at any time via CLI, tray menu, or hotkey |
-| **Hotkey kill switch** | Default hotkey `Ctrl+Shift+F12` stops recording immediately (requires `pynput`) |
+| **Exclude apps** | Apps listed in `exclude_apps` (e.g. password managers) are skipped |
+| **Exclude window patterns** | Titles matching `exclude_window_patterns` are skipped |
+| **Redaction** | Sensitive values are redacted from clipboard/browser-derived note content (disable with `--no-redact`) |
+| **Clipboard length cap** | Clipboard content is truncated at 2,000 characters |
+| **Pause / resume** | Recording can be paused and resumed with CLI commands |
 
-### Options (start sub-command)
-
-```
-  --no-tray           Disable system tray icon
-  --daemon            Fork into background (Unix only)
-  --poll-interval N   Window poll interval in seconds (default: 5)
-  --session-dir DIR   Directory to store session JSONL files
-  --config FILE       Path to config JSON file
-```
-
-### Options (export sub-command)
+### Options (`start`)
 
 ```
-  --date DATE         Date to export as YYYY-MM-DD (default: today)
-  --tool TOOL         Force tool name (skips auto-detection)
-  --preview           Print note without writing to disk
-  --no-redact         Disable automatic redaction
-  --output-dir DIR    Notes root directory (default: notes/)
-  --session-dir DIR   Directory containing session JSONL files
+  --config <CONFIG>                Path to config JSON file
+  --daemon                         Fork into the background (Unix only; on Windows use Task Scheduler or run in a new window)
+  --poll-interval <POLL_INTERVAL>  Window poll interval in seconds
+  --session-dir <SESSION_DIR>      Directory to store session JSONL files
+```
+
+### Options (`export`)
+
+```
+  --config <CONFIG>                Path to config JSON file
+  --date <DATE>                    Date to export (YYYY-MM-DD; default: today)
+  --tool <TOOL>                    Override detected tool name
+  --preview                        Print the note without writing it
+  --append                         Append to an existing note instead of overwriting
+  --no-redact                      Disable automatic redaction of sensitive values
+  --include-urls                   Include browser URLs in the note
+  --session-dir <SESSION_DIR>      Directory containing session JSONL files
+  --output-dir <OUTPUT_DIR>        Root directory for notes (default: notes)
+  --browser-history                Import fresh browser history before generating the note
+  --history-since <HISTORY_SINCE>  Seconds of browser history to import (default: 86400)
 ```
 
 ### Configuration
 
-The configuration file lives at `~/.config/session-logger/config.json` and
-is created automatically on first use.  Show it with:
+Show the active configuration with:
 
 ```bash
-python session_recorder.py config
+cargo run --manifest-path session-recorder/Cargo.toml -- config
+```
+
+Default config path:
+
+```text
+~/.config/session-logger/config.json
 ```
 
 Key settings:
@@ -219,53 +230,10 @@ Key settings:
 | `clipboard_poll_interval` | `2` | Clipboard poll interval (seconds) |
 | `max_clipboard_length` | `2000` | Max clipboard characters to store |
 | `exclude_apps` | password managers | App names to skip entirely |
-| `exclude_window_patterns` | sensitive words | Window title patterns to skip |
-| `browser_history_on_export` | `true` | Import browser history when exporting |
-| `hotkey` | `"ctrl+shift+F12"` | Global hotkey to stop recording |
-| `tray_icon` | `true` | Show tray icon (requires pystray + Pillow) |
-| `redact` | `true` | Redact sensitive values before storage |
-
----
-
-## Converting a session log to a note
-
-Use `session2note.py` to turn a session JSONL file into a structured Markdown
-note using the same pipeline as `dump2note.py`.  It is called automatically
-by `session_recorder.py export`, but can also be run directly.
-
-### Quick start
-
-```bash
-# Export today's session (auto-detects tool, writes to notes/)
-python session2note.py
-
-# Preview without writing
-python session2note.py --preview
-
-# Export a specific date, include browser URLs
-python session2note.py --date 2026-04-20 --include-urls
-
-# Import fresh browser history and preview
-python session2note.py --browser-history --preview
-
-# Force a tool name
-python session2note.py --tool nmap
-```
-
-### Options
-
-```
-  --date DATE           Date as YYYY-MM-DD (default: today)
-  --tool TOOL           Force tool / session name
-  --preview             Print the note without writing to disk
-  --append              Append to an existing note instead of overwriting
-  --no-redact           Disable automatic redaction
-  --include-urls        Include browser URLs in the note
-  --session-dir DIR     Directory containing session JSONL files
-  --output-dir DIR      Root directory for notes (default: notes/)
-  --browser-history     Import fresh browser history before generating note
-  --history-since SECS  Seconds of browser history to import (default: 86400)
-```
+| `exclude_window_patterns` | sensitive words | Window title regex patterns to skip |
+| `browser_history_on_export` | `true` | Import browser history on export |
+| `redact` | `true` | Redact sensitive values |
+| `session_dir` | platform app-data path | Directory for JSONL session logs |
 
 ---
 
