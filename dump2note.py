@@ -570,7 +570,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.session:
         session_dir = Path(args.session_dir) if args.session_dir else _default_session_dir()
         date_for_lookup = args.date or _date.today().isoformat()
-        year = date_for_lookup[:4]
+        try:
+            parsed = _date.fromisoformat(date_for_lookup)
+        except ValueError:
+            print(
+                f'ERROR: Invalid date format "{date_for_lookup}". '
+                'Use YYYY-MM-DD.',
+                file=sys.stderr,
+            )
+            return 1
+        year = str(parsed.year)
         session_path = session_dir / year / f'{date_for_lookup}.jsonl'
         if not session_path.exists():
             print(f'ERROR: Session file not found: {session_path}', file=sys.stderr)
@@ -630,7 +639,7 @@ def main(argv: list[str] | None = None) -> int:
     buckets = classify_lines(normalized, do_redact=not args.no_redact)
 
     # 4. Build note ------------------------------------------------------------
-    note_content = build_note(tool_slug, date_str, buckets, timeline=timeline or None)
+    note_content = build_note(tool_slug, date_str, buckets, timeline=timeline)
 
     # 5. Preview mode ----------------------------------------------------------
     if args.preview:
@@ -639,7 +648,7 @@ def main(argv: list[str] | None = None) -> int:
             preview_refs = [f'![{p.stem}](assets/{p.name})' for p in image_paths]
             note_content = build_note(
                 tool_slug, date_str, buckets,
-                timeline=timeline or None,
+                timeline=timeline,
                 images=preview_refs,
             )
         print(note_content)
@@ -662,8 +671,8 @@ def main(argv: list[str] | None = None) -> int:
     # 7. Build final note with real image refs ----------------------------------
     note_content = build_note(
         tool_slug, date_str, buckets,
-        timeline=timeline or None,
-        images=md_image_refs or None,
+        timeline=timeline,
+        images=md_image_refs,
     )
 
     # 7. Write / append --------------------------------------------------------
