@@ -30,6 +30,7 @@ import tkinter as tk
 _REPO_ROOT  = Path(__file__).resolve().parent
 _REC_LOCAL  = _REPO_ROOT / "session-recorder" / "target" / "release" / "session-recorder"
 _DUMP2NOTE  = _REPO_ROOT / "dump2note.py"
+_DEFAULT_OUTPUT_DIR = "notes"
 
 def _find_recorder() -> str | None:
     """Return path to session-recorder binary, or None if not found."""
@@ -196,18 +197,53 @@ class App(tk.Tk):
         _check(flf, "No-Redact", self._noredact_var, col=2)
         _check(flf, "History",   self._hist_var,     col=3)
 
+        # Output-dir row
+        od = tk.Frame(dump, bg=BG)
+        od.grid(row=3, column=0, sticky="ew", padx=6, pady=2)
+        _label(od, "Out Dir:", col=0)
+        self._outdir_var = tk.StringVar(value=_DEFAULT_OUTPUT_DIR)
+        tk.Entry(
+            od, textvariable=self._outdir_var, width=28,
+            bg=BTN_BG, fg=FG, insertbackground=FG, relief="flat",
+            highlightthickness=1, highlightbackground=BORDER,
+        ).grid(row=0, column=1, padx=4)
+        _btn(od, "…", self._browse_outdir, col=2)
+
         # History-lines + Run row
         br = tk.Frame(dump, bg=BG)
-        br.grid(row=3, column=0, sticky="w", padx=6, pady=(2, 6))
+        br.grid(row=4, column=0, sticky="w", padx=6, pady=(2, 6))
         _label(br, "Hist lines:", col=0, padx=0)
         self._hist_lines = _entry(br, width=6)
         self._hist_lines.insert(0, "500")
         self._hist_lines.grid(row=0, column=1, padx=4)
         _btn(br, "Run dump2note", self._do_dump2note, col=2, padx=(8, 0))
 
+        # ── Publish panel ─────────────────────────────────────────────────────
+        pub = _frame(self, " Publish ")
+        pub.grid(row=2, column=0, sticky="ew", **P)
+
+        # Platform + Lab row
+        pl = tk.Frame(pub, bg=BG)
+        pl.grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
+        _label(pl, "Platform:", col=0)
+        self._platform_var = tk.StringVar()
+        _entry(pl, width=10, textvariable=self._platform_var).grid(row=0, column=1, padx=4)
+        _label(pl, "Lab:", col=2, padx=(10, 4))
+        self._lab_var = tk.StringVar()
+        _entry(pl, width=18, textvariable=self._lab_var).grid(row=0, column=3, padx=4)
+
+        # Flags + Publish button row
+        pf = tk.Frame(pub, bg=BG)
+        pf.grid(row=1, column=0, sticky="w", padx=6, pady=(2, 6))
+        self._nopush_var = tk.BooleanVar()
+        self._pubyes_var = tk.BooleanVar()
+        _check(pf, "No-Push",      self._nopush_var, col=0)
+        _check(pf, "Skip Confirm", self._pubyes_var, col=1)
+        _btn(pf, "Push to GitHub", self._do_publish, col=2, padx=(12, 0))
+
         # ── Output console ────────────────────────────────────────────────────
         hdr = tk.Frame(self, bg=BG)
-        hdr.grid(row=2, column=0, sticky="ew", padx=8, pady=(2, 0))
+        hdr.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 0))
         _label(hdr, "Output", col=0, fg=MUTED, padx=0)
         _btn(hdr, "Clear", self._clear_log, col=1)
 
@@ -217,7 +253,7 @@ class App(tk.Tk):
             relief="flat", highlightthickness=1, highlightbackground=BORDER,
             font=("TkFixedFont", 9), state="disabled",
         )
-        self._log.grid(row=3, column=0, sticky="ew", padx=8, pady=(0, 8))
+        self._log.grid(row=4, column=0, sticky="ew", padx=8, pady=(0, 8))
         self.columnconfigure(0, weight=1)
 
     # ── Logging ───────────────────────────────────────────────────────────────
@@ -310,6 +346,18 @@ class App(tk.Tk):
         if path:
             self._file_var.set(path)
 
+    def _browse_outdir(self) -> None:
+        path = filedialog.askdirectory(title="Select output directory for notes")
+        if path:
+            self._outdir_var.set(path)
+
+    def _outdir_args(self) -> list[str]:
+        """Return --output-dir args if the user has chosen a non-default directory."""
+        outdir = self._outdir_var.get().strip()
+        if outdir and outdir != _DEFAULT_OUTPUT_DIR:
+            return ["--output-dir", outdir]
+        return []
+
     def _do_dump2note(self) -> None:
         if not _DUMP2NOTE.exists():
             self._append(f"[ERROR] dump2note.py not found at {_DUMP2NOTE}\n")
@@ -333,6 +381,28 @@ class App(tk.Tk):
         if self._hist_var.get():
             hl = self._hist_lines.get().strip() or "500"
             cmd += ["--history", "--history-lines", hl]
+        cmd += self._outdir_args()
+        threading.Thread(target=self._run_cmd, args=(cmd,), daemon=True).start()
+
+    # ── Publish to GitHub ─────────────────────────────────────────────────────
+
+    def _do_publish(self) -> None:
+        script = _REPO_ROOT / "publish-lab-notes.sh"
+        if not script.exists():
+            self._append(f"[ERROR] publish-lab-notes.sh not found at {script}\n")
+            return
+        cmd = ["bash", str(script)]
+        platform = self._platform_var.get().strip()
+        lab = self._lab_var.get().strip()
+        if platform:
+            cmd += ["--platform", platform]
+        if lab:
+            cmd += ["--lab", lab]
+        cmd += self._outdir_args()
+        if self._nopush_var.get():
+            cmd.append("--no-push")
+        if self._pubyes_var.get():
+            cmd.append("--yes")
         threading.Thread(target=self._run_cmd, args=(cmd,), daemon=True).start()
 
 
