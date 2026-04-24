@@ -209,9 +209,7 @@ class App(tk.Tk):
         hdr = tk.Frame(self, bg=BG)
         hdr.grid(row=2, column=0, sticky="ew", padx=8, pady=(2, 0))
         _label(hdr, "Output", col=0, fg=MUTED, padx=0)
-        _btn(hdr, "Clear", lambda: self._log.configure(state="normal") or
-             self._log.delete("1.0", "end") or
-             self._log.configure(state="disabled"), col=1)
+        _btn(hdr, "Clear", self._clear_log, col=1)
 
         self._log = scrolledtext.ScrolledText(
             self, height=8,
@@ -223,6 +221,11 @@ class App(tk.Tk):
         self.columnconfigure(0, weight=1)
 
     # ── Logging ───────────────────────────────────────────────────────────────
+
+    def _clear_log(self) -> None:
+        self._log.configure(state="normal")
+        self._log.delete("1.0", "end")
+        self._log.configure(state="disabled")
 
     def _append(self, text: str) -> None:
         self._log.configure(state="normal")
@@ -290,7 +293,7 @@ class App(tk.Tk):
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                 text=True,
             )
-            assert proc.stdout is not None
+            assert proc.stdout is not None, "subprocess stdout was unexpectedly None"
             for line in proc.stdout:
                 self.after(0, self._append, line)
             proc.wait()
