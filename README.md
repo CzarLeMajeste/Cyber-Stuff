@@ -60,18 +60,27 @@ python dump2note.py more-findings.log --tool nmap --date 2026-04-17 --append
 
 # Disable automatic redaction of sensitive values
 python dump2note.py session.log --no-redact
+
+# Convert today's session-recorder JSONL log into a note (adds Session Timeline)
+python dump2note.py --session
+
+# Convert a specific date's session log, including browser URLs
+python dump2note.py --session --date 2026-04-20 --include-urls
+
+# Use a custom session data directory
+python dump2note.py --session --session-dir /mnt/logs/sessions --date 2026-04-20
 ```
 
 ### What it does
 
 | Step | Description |
 |------|-------------|
-| **Ingest** | Reads from a file path or stdin |
+| **Ingest** | Reads from a file path, stdin, shell history (`--history`), or a session-recorder JSONL log (`--session`) |
 | **Detect** | Auto-detects tool name and date from content; prompts you to confirm or override |
 | **Normalize** | Deduplicates repeated lines and collapses blank-line runs |
 | **Classify** | Sorts lines into *Commands / Steps*, *Findings*, *Follow-ups*, and *Raw Notes* |
 | **Redact** | Removes passwords, API tokens, JWTs, and AWS keys from the output (disable with `--no-redact`) |
-| **Format** | Produces Obsidian-friendly Markdown with YAML frontmatter and task-style follow-ups |
+| **Format** | Produces Obsidian-friendly Markdown with YAML frontmatter, task-style follow-ups, and an optional **Session Timeline** section |
 | **Write** | Creates `notes/<tool>/<YYYY>/<YYYY-MM-DD>.md` (merges or appends if the file already exists) |
 
 ### Options
@@ -91,6 +100,9 @@ options:
   --history             Auto-read the current shell history and convert it
   --history-lines N     Number of recent history lines to ingest (default: 500)
   --output-dir DIR      Root directory for notes (default: notes/)
+  --session             Read from the session-recorder JSONL log for --date (or today)
+  --session-dir DIR     Session data directory (default: platform app-data path)
+  --include-urls        Include browser URLs when reading a session JSONL file
   -h, --help            Show this help message
 ```
 
