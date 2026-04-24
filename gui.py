@@ -30,6 +30,7 @@ import tkinter as tk
 _REPO_ROOT  = Path(__file__).resolve().parent
 _REC_LOCAL  = _REPO_ROOT / "session-recorder" / "target" / "release" / "session-recorder"
 _DUMP2NOTE  = _REPO_ROOT / "dump2note.py"
+_DEFAULT_OUTPUT_DIR = "notes"
 
 def _find_recorder() -> str | None:
     """Return path to session-recorder binary, or None if not found."""
@@ -200,7 +201,7 @@ class App(tk.Tk):
         od = tk.Frame(dump, bg=BG)
         od.grid(row=3, column=0, sticky="ew", padx=6, pady=2)
         _label(od, "Out Dir:", col=0)
-        self._outdir_var = tk.StringVar(value="notes")
+        self._outdir_var = tk.StringVar(value=_DEFAULT_OUTPUT_DIR)
         tk.Entry(
             od, textvariable=self._outdir_var, width=28,
             bg=BTN_BG, fg=FG, insertbackground=FG, relief="flat",
@@ -350,6 +351,13 @@ class App(tk.Tk):
         if path:
             self._outdir_var.set(path)
 
+    def _outdir_args(self) -> list[str]:
+        """Return --output-dir args if the user has chosen a non-default directory."""
+        outdir = self._outdir_var.get().strip()
+        if outdir and outdir != _DEFAULT_OUTPUT_DIR:
+            return ["--output-dir", outdir]
+        return []
+
     def _do_dump2note(self) -> None:
         if not _DUMP2NOTE.exists():
             self._append(f"[ERROR] dump2note.py not found at {_DUMP2NOTE}\n")
@@ -373,9 +381,7 @@ class App(tk.Tk):
         if self._hist_var.get():
             hl = self._hist_lines.get().strip() or "500"
             cmd += ["--history", "--history-lines", hl]
-        outdir = self._outdir_var.get().strip()
-        if outdir and outdir != "notes":
-            cmd += ["--output-dir", outdir]
+        cmd += self._outdir_args()
         threading.Thread(target=self._run_cmd, args=(cmd,), daemon=True).start()
 
     # ── Publish to GitHub ─────────────────────────────────────────────────────
@@ -392,9 +398,7 @@ class App(tk.Tk):
             cmd += ["--platform", platform]
         if lab:
             cmd += ["--lab", lab]
-        outdir = self._outdir_var.get().strip()
-        if outdir and outdir != "notes":
-            cmd += ["--output-dir", outdir]
+        cmd += self._outdir_args()
         if self._nopush_var.get():
             cmd.append("--no-push")
         if self._pubyes_var.get():
