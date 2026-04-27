@@ -264,3 +264,463 @@ pub fn tool_slug(name: &str) -> String {
         .trim_matches('-')
         .to_string()
 }
+
+// ── Unit tests ─────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── detect_tool ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn detect_tool_nmap_scan_report() {
+        assert_eq!(detect_tool("Nmap scan report for 10.0.0.1"), Some("nmap"));
+    }
+
+    #[test]
+    fn detect_tool_nmap_port_table() {
+        assert_eq!(detect_tool("PORT   STATE SERVICE\n80/tcp open  http"), Some("nmap"));
+    }
+
+    #[test]
+    fn detect_tool_metasploit_prompt() {
+        assert_eq!(detect_tool("msf6 > use exploit/multi/handler"), Some("metasploit"));
+    }
+
+    #[test]
+    fn detect_tool_meterpreter() {
+        assert_eq!(detect_tool("meterpreter > getuid"), Some("metasploit"));
+    }
+
+    #[test]
+    fn detect_tool_sqlmap() {
+        assert_eq!(detect_tool("sqlmap identified the following injection point"), Some("sqlmap"));
+    }
+
+    #[test]
+    fn detect_tool_hydra_data_line() {
+        assert_eq!(detect_tool("[DATA] attacking ftp://10.0.0.1:21/"), Some("hydra"));
+    }
+
+    #[test]
+    fn detect_tool_nikto_version() {
+        assert_eq!(detect_tool("- Nikto v2.1.6"), Some("nikto"));
+    }
+
+    #[test]
+    fn detect_tool_hashcat() {
+        assert_eq!(detect_tool("hashcat -m 0 -a 0 hash.txt rockyou.txt"), Some("hashcat"));
+    }
+
+    #[test]
+    fn detect_tool_ffuf() {
+        assert_eq!(detect_tool("ffuf -u http://example.com/FUZZ -w wordlist"), Some("ffuf"));
+    }
+
+    #[test]
+    fn detect_tool_gobuster_dir_mode() {
+        assert_eq!(detect_tool("Dir Mode:"), Some("gobuster"));
+    }
+
+    #[test]
+    fn detect_tool_none_for_unknown() {
+        assert_eq!(detect_tool("Hello world, no tools here"), None);
+    }
+
+    #[test]
+    fn detect_tool_none_for_empty() {
+        assert_eq!(detect_tool(""), None);
+    }
+
+    #[test]
+    fn detect_tool_case_insensitive_nmap() {
+        assert_eq!(detect_tool("starting nmap scan"), Some("nmap"));
+    }
+
+    #[test]
+    fn detect_tool_curl() {
+        assert_eq!(detect_tool("curl -s http://example.com/api"), Some("curl"));
+    }
+
+    #[test]
+    fn detect_tool_wpscan() {
+        assert_eq!(detect_tool("wpscan --url http://example.com"), Some("wpscan"));
+    }
+
+    // ── redact_text ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn redact_password_short_flag() {
+        let out = redact_text("hydra -l admin -p s3cr3t ssh://10.0.0.1");
+        assert!(!out.contains("s3cr3t"), "password should be redacted");
+        assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_password_long_flag() {
+        let out = redact_text("script --password mysupersecret");
+        assert!(!out.contains("mysupersecret"));
+        assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_password_equals() {
+        let out = redact_text("password=hunter2");
+        assert!(!out.contains("hunter2"));
+        assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_api_key() {
+        let out = redact_text("api_key=abc123xyz");
+        assert!(!out.contains("abc123xyz"));
+        assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_token() {
+        let out = redact_text("token=secrettoken");
+        assert!(!out.contains("secrettoken"));
+        assert!(out.contains("[REDACTED]"));
+    }
+
+    #[test]
+    fn redact_aws_akia_key() {
+        let out = redact_text("Key: AKIAIOSFODNN7EXAMPLE");
+        assert!(!out.contains("AKIAIOSFODNN7EXAMPLE"));
+        assert!(out.contains("[AWS_KEY_REDACTED]"));
+    }
+
+    #[test]
+    fn redact_aws_asia_key() {
+        let out = redact_text("Key: ASIAIOSFODNN7EXAMPLE");
+        assert!(!out.contains("ASIAIOSFODNN7EXAMPLE"));
+        assert!(out.contains("[AWS_KEY_REDACTED]"));
+    }
+
+    #[test]
+    fn redact_jwt() {
+        // JWT embedded in a context that does not trigger the token= pattern
+        let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c2VyIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c";
+        let input = format!("Payload: {jwt}");
+        let out = redact_text(&input);
+        assert!(!out.contains("eyJhbGciOiJIUzI1NiJ9"));
+        assert!(out.contains("[JWT_REDACTED]"));
+    }
+
+    #[test]
+    fn redact_no_false_positive_on_plain_text() {
+        let plain = "nmap scan results for 10.0.0.1";
+        assert_eq!(redact_text(plain), plain);
+    }
+
+    // ── normalize_lines ──────────────────────────────────────────────────────
+
+    #[test]
+    fn normalize_deduplicates_exact_lines() {
+        let lines: Vec<String> = vec![
+            "nmap -sV target".into(),
+            "nmap -sV target".into(),
+            "other".into(),
+        ];
+        let result = normalize_lines(&lines);
+        assert_eq!(result.iter().filter(|l| l.as_str() == "nmap -sV target").count(), 1);
+    }
+
+    #[test]
+    fn normalize_collapses_consecutive_blank_lines() {
+        let lines: Vec<String> = vec!["a".into(), "".into(), "".into(), "b".into()];
+        let result = normalize_lines(&lines);
+        let blank_count = result.iter().filter(|l| l.trim().is_empty()).count();
+        assert_eq!(blank_count, 1);
+    }
+
+    #[test]
+    fn normalize_preserves_single_blank() {
+        let lines: Vec<String> = vec!["a".into(), "".into(), "b".into()];
+        let result = normalize_lines(&lines);
+        assert_eq!(result, vec!["a", "", "b"]);
+    }
+
+    #[test]
+    fn normalize_strips_trailing_whitespace() {
+        let lines: Vec<String> = vec!["hello   ".into()];
+        let result = normalize_lines(&lines);
+        assert_eq!(result, vec!["hello"]);
+    }
+
+    #[test]
+    fn normalize_empty_input() {
+        let result = normalize_lines(&[]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn normalize_preserves_order() {
+        let lines: Vec<String> = vec!["first".into(), "second".into(), "third".into()];
+        let result = normalize_lines(&lines);
+        assert_eq!(result, vec!["first", "second", "third"]);
+    }
+
+    // ── classify_lines ───────────────────────────────────────────────────────
+
+    #[test]
+    fn classify_shell_prompt_as_command() {
+        let lines: Vec<String> = vec!["$ nmap -sV 10.0.0.1".into()];
+        let b = classify_lines(&lines, false);
+        assert!(b.commands.iter().any(|c| c.contains("nmap")));
+        assert!(b.findings.is_empty());
+        assert!(b.followups.is_empty());
+    }
+
+    #[test]
+    fn classify_tool_name_as_command() {
+        let lines: Vec<String> = vec!["nmap -sV target".into()];
+        let b = classify_lines(&lines, false);
+        assert!(!b.commands.is_empty());
+    }
+
+    #[test]
+    fn classify_nmap_port_as_finding() {
+        let lines: Vec<String> = vec!["80/tcp open  http".into()];
+        let b = classify_lines(&lines, false);
+        assert!(!b.findings.is_empty());
+    }
+
+    #[test]
+    fn classify_cve_as_finding() {
+        let lines: Vec<String> = vec!["CVE-2021-44228 vulnerability found".into()];
+        let b = classify_lines(&lines, false);
+        assert!(!b.findings.is_empty());
+    }
+
+    #[test]
+    fn classify_todo_as_followup() {
+        let lines: Vec<String> = vec!["TODO: check for LFI".into()];
+        let b = classify_lines(&lines, false);
+        assert!(!b.followups.is_empty());
+    }
+
+    #[test]
+    fn classify_question_as_followup() {
+        let lines: Vec<String> = vec!["Is port 8080 exploitable?".into()];
+        let b = classify_lines(&lines, false);
+        assert!(!b.followups.is_empty());
+    }
+
+    #[test]
+    fn classify_blank_lines_skipped() {
+        let lines: Vec<String> = vec!["".into(), "   ".into()];
+        let b = classify_lines(&lines, false);
+        assert!(b.commands.is_empty() && b.findings.is_empty()
+            && b.followups.is_empty() && b.raw.is_empty());
+    }
+
+    #[test]
+    fn classify_unrecognised_goes_to_raw() {
+        let lines: Vec<String> = vec!["just some random text here".into()];
+        let b = classify_lines(&lines, false);
+        assert_eq!(b.raw, vec!["just some random text here"]);
+    }
+
+    #[test]
+    fn classify_redact_flag_applied() {
+        let lines: Vec<String> = vec!["$ hydra -p s3cr3t target".into()];
+        let b = classify_lines(&lines, true);
+        for cmd in &b.commands {
+            assert!(!cmd.contains("s3cr3t"), "password should be redacted");
+        }
+    }
+
+    #[test]
+    fn classify_http_200_as_finding() {
+        let lines: Vec<String> = vec!["HTTP/1.1 200 OK".into()];
+        let b = classify_lines(&lines, false);
+        assert!(!b.findings.is_empty());
+    }
+
+    // ── build_note ───────────────────────────────────────────────────────────
+
+    fn empty_buckets() -> Buckets {
+        Buckets::default()
+    }
+
+    #[test]
+    fn build_note_contains_yaml_frontmatter() {
+        let b = empty_buckets();
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(note.contains("---"));
+        assert!(note.contains("tool: nmap"));
+        assert!(note.contains("date: 2026-04-17"));
+    }
+
+    #[test]
+    fn build_note_contains_required_sections() {
+        let b = empty_buckets();
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(note.contains("## Summary"));
+        assert!(note.contains("## Commands / Steps"));
+        assert!(note.contains("## Findings"));
+        assert!(note.contains("## Follow-ups"));
+    }
+
+    #[test]
+    fn build_note_empty_summary_fallback() {
+        let b = empty_buckets();
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(note.contains("No structured content detected"));
+    }
+
+    #[test]
+    fn build_note_raw_section_included_when_present() {
+        let mut b = empty_buckets();
+        b.raw.push("Some raw note".into());
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(note.contains("## Raw Notes"));
+        assert!(note.contains("Some raw note"));
+    }
+
+    #[test]
+    fn build_note_raw_section_absent_when_empty() {
+        let b = empty_buckets();
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(!note.contains("## Raw Notes"));
+    }
+
+    #[test]
+    fn build_note_tags_contain_tool() {
+        let b = empty_buckets();
+        let note = build_note("sqlmap", "2026-04-17", &b);
+        assert!(note.contains("tool/sqlmap"));
+    }
+
+    #[test]
+    fn build_note_commands_listed() {
+        let mut b = empty_buckets();
+        b.commands.push("nmap -sV target".into());
+        b.commands.push("curl http://example.com".into());
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(note.contains("nmap -sV target"));
+        assert!(note.contains("curl http://example.com"));
+    }
+
+    #[test]
+    fn build_note_summary_counts_are_accurate() {
+        let mut b = empty_buckets();
+        b.commands.push("cmd1".into());
+        b.commands.push("cmd2".into());
+        b.findings.push("finding1".into());
+        let note = build_note("nmap", "2026-04-17", &b);
+        assert!(note.contains("2 command(s)"));
+        assert!(note.contains("1 finding(s)"));
+    }
+
+    // ── events_to_text ───────────────────────────────────────────────────────
+
+    fn make_event(event_type: &str, data: &str) -> EventRecord {
+        use crate::event::EventRecord;
+        EventRecord::new(event_type, "test", data)
+    }
+
+    #[test]
+    fn events_to_text_window_event() {
+        let events = vec![make_event("window", "Firefox")];
+        let text = events_to_text(&events, false);
+        assert!(text.contains("# Window: Firefox"));
+    }
+
+    #[test]
+    fn events_to_text_command_event() {
+        let events = vec![make_event("command", "nmap -sV target")];
+        let text = events_to_text(&events, false);
+        assert!(text.contains("$ nmap -sV target"));
+    }
+
+    #[test]
+    fn events_to_text_clipboard_single_line() {
+        let events = vec![make_event("clipboard", "10.0.0.1")];
+        let text = events_to_text(&events, false);
+        assert!(text.contains("10.0.0.1"));
+        assert!(!text.contains("# Clipboard:"));
+    }
+
+    #[test]
+    fn events_to_text_clipboard_multiline() {
+        let events = vec![make_event("clipboard", "line1\nline2")];
+        let text = events_to_text(&events, false);
+        assert!(text.contains("# Clipboard:"));
+    }
+
+    #[test]
+    fn events_to_text_browser_url_excluded_by_default() {
+        let events = vec![make_event("browser_url", "https://example.com")];
+        let text = events_to_text(&events, false);
+        assert!(!text.contains("https://example.com"));
+    }
+
+    #[test]
+    fn events_to_text_browser_url_included_when_flag_set() {
+        let events = vec![make_event("browser_url", "https://example.com")];
+        let text = events_to_text(&events, true);
+        assert!(text.contains("# URL: https://example.com"));
+    }
+
+    #[test]
+    fn events_to_text_system_event() {
+        let events = vec![make_event("system", "Recording started")];
+        let text = events_to_text(&events, false);
+        assert!(text.contains("# [Recording started]"));
+    }
+
+    #[test]
+    fn events_to_text_unknown_type_ignored() {
+        let events = vec![make_event("unknown_type", "data")];
+        let text = events_to_text(&events, false);
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn events_to_text_multiple_events_joined_by_newline() {
+        let events = vec![
+            make_event("command", "cmd1"),
+            make_event("command", "cmd2"),
+        ];
+        let text = events_to_text(&events, false);
+        assert!(text.contains("$ cmd1"));
+        assert!(text.contains("$ cmd2"));
+        assert!(text.contains('\n'));
+    }
+
+    // ── tool_slug ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn tool_slug_lowercases() {
+        assert_eq!(tool_slug("NMAP"), "nmap");
+    }
+
+    #[test]
+    fn tool_slug_replaces_spaces_with_dash() {
+        assert_eq!(tool_slug("my tool"), "my-tool");
+    }
+
+    #[test]
+    fn tool_slug_preserves_hyphen() {
+        assert_eq!(tool_slug("aircrack-ng"), "aircrack-ng");
+    }
+
+    #[test]
+    fn tool_slug_preserves_dot() {
+        assert_eq!(tool_slug("tool.name"), "tool.name");
+    }
+
+    #[test]
+    fn tool_slug_strips_leading_trailing_dashes() {
+        assert_eq!(tool_slug(" nmap "), "nmap");
+    }
+
+    #[test]
+    fn tool_slug_replaces_special_chars() {
+        assert_eq!(tool_slug("tool/name@1"), "tool-name-1");
+    }
+}

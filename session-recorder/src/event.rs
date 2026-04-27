@@ -59,7 +59,7 @@ impl EventStore {
         }
     }
 
-    fn path_for(&self, date_str: &str) -> PathBuf {
+    pub(crate) fn path_for(&self, date_str: &str) -> PathBuf {
         let year = &date_str[..4];
         let p = self.dir.join(year).join(format!("{date_str}.jsonl"));
         if let Some(parent) = p.parent() {
@@ -120,5 +120,164 @@ impl EventStore {
         }
         dates.sort();
         dates
+    }
+}
+
+// ── Unit tests ─────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    // ── EventRecord ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn event_record_new_fills_fields() {
+        let ev = EventRecord::new("command", "shell", "nmap -sV target");
+        assert_eq!(ev.event_type, "command");
+        assert_eq!(ev.source, "shell");
+        assert_eq!(ev.data, "nmap -sV target");
+        assert!(ev.app.is_empty());
+        assert!(ev.extra.is_empty());
+    }
+
+    #[test]
+    fn event_record_timestamp_is_iso8601() {
+        let ev = EventRecord::new("window", "tracker", "Firefox");
+        // Timestamps look like 2026-04-17T10:00:00Z – at least 10 chars
+        assert!(ev.ts.len() >= 10);
+        assert!(ev.ts.contains('T') || ev.ts.contains('-'));
+    }
+
+    #[test]
+    fn event_record_with_app_sets_app_field() {
+        let ev = EventRecord::new("window", "tracker", "My Window").with_app("firefox");
+        assert_eq!(ev.app, "firefox");
+    }
+
+    #[test]
+    fn event_record_date_str_returns_first_10_chars() {
+        let mut ev = EventRecord::new("system", "recorder", "start");
+        ev.ts = "2026-04-17T10:00:00Z".to_string();
+        assert_eq!(ev.date_str(), "2026-04-17");
+    }
+
+    #[test]
+    fn event_record_serialises_and_deserialises() {
+        let ev = EventRecord::new("command", "shell", "ls -la").with_app("terminal");
+        let json = serde_json::to_string(&ev).expect("serialize");
+        let decoded: EventRecord = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(decoded.event_type, "command");
+        assert_eq!(decoded.data, "ls -la");
+        assert_eq!(decoded.app, "terminal");
+    }
+
+    // ── EventStore ───────────────────────────────────────────────────────────
+
+    fn make_store() -> (TempDir, EventStore) {
+        let dir = TempDir::new().expect("temp dir");
+        let store = EventStore::new(dir.path().to_path_buf());
+        (dir, store)
+    }
+
+    #[test]
+    fn event_store_write_and_read_round_trip() {
+        let (_dir, store) = make_store();
+        let mut ev = EventRecord::new("command", "shell", "nmap -sV 10.0.0.1");
+        ev.ts = "2026-04-17T10:00:00Z".to_string();
+
+        store.write(&ev).expect("write");
+        let events = store.read("2026-04-17").expect("read");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].event_type, "command");
+        assert_eq!(events[0].data, "nmap -sV 10.0.0.1");
+    }
+
+    #[test]
+    fn event_store_read_returns_empty_for_missing_date() {
+        let (_dir, store) = make_store();
+        let events = store.read("2026-01-01").expect("read");
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn event_store_multiple_events_same_day() {
+        let (_dir, store) = make_store();
+        let mut ev1 = EventRecord::new("command", "shell", "cmd1");
+        ev1.ts = "2026-04-17T10:00:00Z".to_string();
+        let mut ev2 = EventRecord::new("window", "tracker", "Firefox");
+        ev2.ts = "2026-04-17T10:01:00Z".to_string();
+
+        store.write(&ev1).expect("write ev1");
+        store.write(&ev2).expect("write ev2");
+
+        let events = store.read("2026-04-17").expect("read");
+        assert_eq!(events.len(), 2);
+    }
+
+    #[test]
+    fn event_store_events_on_different_days_are_separate() {
+        let (_dir, store) = make_store();
+        let mut ev1 = EventRecord::new("command", "shell", "cmd1");
+        ev1.ts = "2026-04-17T10:00:00Z".to_string();
+        let mut ev2 = EventRecord::new("command", "shell", "cmd2");
+        ev2.ts = "2026-04-18T10:00:00Z".to_string();
+
+        store.write(&ev1).expect("write");
+        store.write(&ev2).expect("write");
+
+        let day1 = store.read("2026-04-17").expect("read day1");
+        let day2 = store.read("2026-04-18").expect("read day2");
+
+        assert_eq!(day1.len(), 1);
+        assert_eq!(day2.len(), 1);
+        assert_eq!(day1[0].data, "cmd1");
+        assert_eq!(day2[0].data, "cmd2");
+    }
+
+    #[test]
+    fn event_store_available_dates_lists_written_dates() {
+        let (_dir, store) = make_store();
+        let mut ev = EventRecord::new("command", "shell", "cmd");
+        ev.ts = "2026-04-17T10:00:00Z".to_string();
+        store.write(&ev).expect("write");
+
+        let dates = store.available_dates();
+        assert!(dates.contains(&"2026-04-17".to_string()));
+    }
+
+    #[test]
+    fn event_store_available_dates_sorted() {
+        let (_dir, store) = make_store();
+        for date in ["2026-04-19", "2026-04-17", "2026-04-18"] {
+            let mut ev = EventRecord::new("command", "shell", "cmd");
+            ev.ts = format!("{date}T10:00:00Z");
+            store.write(&ev).expect("write");
+        }
+        let dates = store.available_dates();
+        let mut sorted = dates.clone();
+        sorted.sort();
+        assert_eq!(dates, sorted);
+    }
+
+    #[test]
+    fn event_store_skips_invalid_json_lines() {
+        let (_dir, store) = make_store();
+        let mut ev = EventRecord::new("command", "shell", "valid");
+        ev.ts = "2026-04-17T10:00:00Z".to_string();
+        store.write(&ev).expect("write valid");
+
+        // Manually inject a bad line into the JSONL file
+        let jsonl_path = store.path_for("2026-04-17");
+        let existing = fs::read_to_string(&jsonl_path).unwrap_or_default();
+        fs::write(&jsonl_path, format!("{existing}not-json\n")).expect("inject bad line");
+
+        let events = store.read("2026-04-17").expect("read");
+        // The valid event should still be there
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].data, "valid");
     }
 }
