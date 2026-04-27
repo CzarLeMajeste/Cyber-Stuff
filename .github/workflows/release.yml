@@ -5,10 +5,16 @@
 #   • Manual dispatch from the Actions tab  → build only (no release step)
 #
 # Produces:
+#   session-recorder CLI (Rust):
 #   • Windows 10/11  (x86_64)  →  session-recorder.exe
 #   • macOS 13+ Intel + Apple Silicon  →  universal binary via lipo
 #   • Debian/Ubuntu  (x86_64)  →  .deb package (via cargo-deb)
 #   • RPM-based (x86_64)       →  .rpm package (via cargo-generate-rpm)
+#
+#   Desktop GUI (Python / PyInstaller):
+#   • Windows 10/11  (x86_64)  →  ctf-session-logger-gui.exe
+#   • macOS (arm64)            →  ctf-session-logger-gui
+#   • Linux  (x86_64)          →  ctf-session-logger-gui
 
 name: Release
 
@@ -77,6 +83,31 @@ jobs:
           name: rpm-package
           path: session-recorder/target/generate-rpm/*.rpm
 
+      # ── GUI (Linux) ──────────────────────────────────────────────────────
+      - name: Install Python tkinter (Linux)
+        run: sudo apt-get install -y python3-tk
+
+      - name: Set up Python (Linux GUI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller (Linux)
+        run: pip install pyinstaller
+
+      - name: Build GUI (Linux)
+        run: |
+          pyinstaller --onefile --windowed \
+            --add-data "dump2note.py:." \
+            --name ctf-session-logger-gui \
+            gui.py
+
+      - name: Upload Linux GUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-linux-x86_64
+          path: dist/ctf-session-logger-gui
+
   # ── Windows 10 / 11 (x86_64-pc-windows-msvc) ─────────────────────────────
   windows:
     name: Windows x86_64
@@ -108,6 +139,28 @@ jobs:
         with:
           name: windows-x86_64
           path: session-recorder/target/x86_64-pc-windows-msvc/release/session-recorder.exe
+
+      # ── GUI (Windows) ────────────────────────────────────────────────────
+      - name: Set up Python (Windows GUI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller (Windows)
+        run: pip install pyinstaller
+
+      - name: Build GUI (Windows)
+        run: |
+          pyinstaller --onefile --windowed `
+            --add-data "dump2note.py;." `
+            --name ctf-session-logger-gui `
+            gui.py
+
+      - name: Upload Windows GUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-windows-x86_64
+          path: dist/ctf-session-logger-gui.exe
 
   # ── macOS universal binary (Intel + Apple Silicon) ────────────────────────
   macos:
@@ -156,6 +209,28 @@ jobs:
           name: macos-universal
           path: session-recorder/target/universal-apple-darwin/release/session-recorder
 
+      # ── GUI (macOS) ──────────────────────────────────────────────────────
+      - name: Set up Python (macOS GUI)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PyInstaller (macOS)
+        run: pip install pyinstaller
+
+      - name: Build GUI (macOS)
+        run: |
+          pyinstaller --onefile --windowed \
+            --add-data "dump2note.py:." \
+            --name ctf-session-logger-gui \
+            gui.py
+
+      - name: Upload macOS GUI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-macos-arm64
+          path: dist/ctf-session-logger-gui
+
   # ── GitHub Release (tag pushes only) ─────────────────────────────────────
   release:
     name: Publish GitHub Release
@@ -182,6 +257,15 @@ jobs:
             -exec mv {} artifacts/session-recorder-${TAG}-x86_64.deb \;
           find artifacts/rpm-package -name "*.rpm" \
             -exec mv {} artifacts/session-recorder-${TAG}-x86_64.rpm \;
+          # GUI executables
+          mv artifacts/gui-windows-x86_64/ctf-session-logger-gui.exe \
+             artifacts/ctf-session-logger-gui-${TAG}-windows-x86_64.exe
+          mv artifacts/gui-macos-arm64/ctf-session-logger-gui \
+             artifacts/ctf-session-logger-gui-${TAG}-macos-arm64
+          chmod +x artifacts/ctf-session-logger-gui-${TAG}-macos-arm64
+          mv artifacts/gui-linux-x86_64/ctf-session-logger-gui \
+             artifacts/ctf-session-logger-gui-${TAG}-linux-x86_64
+          chmod +x artifacts/ctf-session-logger-gui-${TAG}-linux-x86_64
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -194,3 +278,6 @@ jobs:
             artifacts/session-recorder-*-macos-universal
             artifacts/session-recorder-*-x86_64.deb
             artifacts/session-recorder-*-x86_64.rpm
+            artifacts/ctf-session-logger-gui-*-windows-x86_64.exe
+            artifacts/ctf-session-logger-gui-*-macos-arm64
+            artifacts/ctf-session-logger-gui-*-linux-x86_64

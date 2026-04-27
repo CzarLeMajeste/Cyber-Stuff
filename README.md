@@ -139,12 +139,26 @@ and export it into structured notes.
 Pre-built binaries are published automatically on every tagged release via
 the included GitHub Actions workflow:
 
+**session-recorder CLI:**
+
 | Platform | Asset |
 |----------|-------|
 | **Windows 10/11** (x86_64) | `session-recorder-<tag>-windows-x86_64.exe` |
 | **macOS** (Intel + Apple Silicon universal) | `session-recorder-<tag>-macos-universal` |
 | **Linux** (x86_64 Debian/Ubuntu) | `session-recorder-<tag>-x86_64.deb` |
 | **Linux** (x86_64 RPM-based distros) | `session-recorder-<tag>-x86_64.rpm` |
+
+**Desktop GUI (standalone, no Python required):**
+
+| Platform | Asset |
+|----------|-------|
+| **Windows 10/11** (x86_64) | `ctf-session-logger-gui-<tag>-windows-x86_64.exe` |
+| **macOS** (Apple Silicon / arm64) | `ctf-session-logger-gui-<tag>-macos-arm64` |
+| **Linux** (x86_64) | `ctf-session-logger-gui-<tag>-linux-x86_64` |
+
+> **macOS Intel users:** The GUI binary targets Apple Silicon. Run it on Intel
+> Macs via Rosetta 2 (`arch -x86_64 ./ctf-session-logger-gui-…-macos-arm64`)
+> or launch `gui.py` directly with a local Python 3.10+ interpreter.
 
 Download the latest release from the
 [Releases page](https://github.com/CzarLeMajeste/Session-Logger-for-CTFs/releases/latest)

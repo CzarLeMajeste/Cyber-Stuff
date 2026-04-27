@@ -27,9 +27,17 @@ import tkinter as tk
 
 # ── Repository paths ──────────────────────────────────────────────────────────
 
-_REPO_ROOT  = Path(__file__).resolve().parent
+if getattr(sys, "frozen", False):
+    # Running as a PyInstaller-frozen executable.
+    # Bundled data files (e.g. dump2note.py) are extracted to sys._MEIPASS;
+    # the executable itself sits in its own directory (_REPO_ROOT).
+    _REPO_ROOT = Path(sys.executable).parent
+    _DUMP2NOTE = Path(sys._MEIPASS) / "dump2note.py"  # type: ignore[attr-defined]
+else:
+    _REPO_ROOT = Path(__file__).resolve().parent
+    _DUMP2NOTE = _REPO_ROOT / "dump2note.py"
+
 _REC_LOCAL  = _REPO_ROOT / "session-recorder" / "target" / "release" / "session-recorder"
-_DUMP2NOTE  = _REPO_ROOT / "dump2note.py"
 _DEFAULT_OUTPUT_DIR = "notes"
 
 def _find_recorder() -> str | None:
